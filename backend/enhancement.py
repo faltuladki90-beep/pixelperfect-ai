@@ -6,44 +6,55 @@ from PIL import Image
 
 def enhance_image(image, mode="text_safe"):
     """
-    Conservative image enhancement.
-    Does not generate or rewrite text.
+    Conservative 2x image upscaling.
+    No OCR or text rewriting.
     """
 
     if not isinstance(image, Image.Image):
         raise ValueError("Input must be a PIL image")
 
-    original = np.array(image.convert("RGB"))
-    bgr = cv2.cvtColor(original, cv2.COLOR_RGB2BGR)
+    rgb = np.array(image.convert("RGB"))
+    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
     if mode == "text_safe":
-        # Enhance luminance while retaining color information
-        lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
-        l, a, b = cv2.split(lab)
-
-        clahe = cv2.createCLAHE(
-            clipLimit=1.5,
-            tileGridSize=(8, 8)
+        # Upscale first using Lanczos interpolation.
+        h, w = bgr.shape[:2]
+        enlarged = cv2.resize(
+            bgr,
+            (w * 2, h * 2),
+            interpolation=cv2.INTER_LANCZOS4
         )
-        l = clahe.apply(l)
+
+        # Very mild luminance-only sharpening.
+        lab = cv2.cvtColor(enlarged, cv2.COLOR_BGR2LAB)
+        light, a, b = cv2.split(lab)
+
+        blurred = cv2.GaussianBlur(
+            light, (0, 0), sigmaX=0.65
+        )
+
+        light = cv2.addWeighted(
+            light, 1.12,
+            blurred, -0.12, 0
+        )
 
         processed = cv2.cvtColor(
-            cv2.merge((l, a, b)),
+            cv2.merge((light, a, b)),
             cv2.COLOR_LAB2BGR
         )
 
-        # Mild unsharp masking to improve edge definition
-        blurred = cv2.GaussianBlur(
-            processed, (0, 0), 0.7
-        )
-        processed = cv2.addWeighted(
-            processed, 1.18,
-            blurred, -0.18, 0
+    elif mode == "photo":
+        h, w = bgr.shape[:2]
+        processed = cv2.resize(
+            bgr,
+            (w * 2, h * 2),
+            interpolation=cv2.INTER_LANCZOS4
         )
 
-    elif mode == "photo":
         processed = cv2.detailEnhance(
-            bgr, sigma_s=10, sigma_r=0.12
+            processed,
+            sigma_s=10,
+            sigma_r=0.12
         )
 
     else:
